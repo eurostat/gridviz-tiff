@@ -11,7 +11,6 @@ import { fromUrl } from 'geotiff'
  * @author Joseph Davies, Julien Gaffuri
  */
 export class GeoTIFF extends Dataset {
-
     /**
      * @param {object} map
      * @param {string} url
@@ -54,7 +53,7 @@ export class GeoTIFF extends Dataset {
         ;(async () => {
             try {
                 //similar to what class ParquetGrid from NPM gridviz-parquet plugin does with geotiff.js library
-                const tiff = await fromUrl(this.url)
+                const tiff = await fromUrl(this.url, { allowFullFile: true })
                 const image = await tiff.getImage()
                 const sampleCount = image.getSamplesPerPixel()
                 const bands =
@@ -63,15 +62,10 @@ export class GeoTIFF extends Dataset {
                         : this.bands
 
                 if (!Array.isArray(bands) || bands.length === 0)
-                    throw new Error('The bands option must be a non-empty array of zero-based sample indexes.')
-                if (
-                    bands.some(
-                        (band) =>
-                            !Number.isInteger(band) ||
-                            band < 0 ||
-                            band >= sampleCount
+                    throw new Error(
+                        'The bands option must be a non-empty array of zero-based sample indexes.'
                     )
-                )
+                if (bands.some((band) => !Number.isInteger(band) || band < 0 || band >= sampleCount))
                     throw new RangeError(`Band indexes must be integers between 0 and ${sampleCount - 1}.`)
                 if (new Set(bands).size !== bands.length)
                     throw new Error('The bands option must not contain duplicate indexes.')
@@ -86,7 +80,9 @@ export class GeoTIFF extends Dataset {
                 if (new Set(bandNames).size !== bandNames.length)
                     throw new Error('GeoTIFF band names must be unique to create cell properties.')
                 if (bandNames.some((name) => name === 'x' || name === 'y'))
-                    throw new Error('GeoTIFF band names cannot be "x" or "y", which are reserved for cell coordinates.')
+                    throw new Error(
+                        'GeoTIFF band names cannot be "x" or "y", which are reserved for cell coordinates.'
+                    )
 
                 const [resolutionX, resolutionY] = image.getResolution()
                 const cellWidth = Math.abs(resolutionX)
@@ -126,7 +122,10 @@ export class GeoTIFF extends Dataset {
                         const pixel = row * width + column
                         const cell = {
                             x: isPixelArea
-                                ? Math.min(originX + column * resolutionX, originX + (column + 1) * resolutionX)
+                                ? Math.min(
+                                      originX + column * resolutionX,
+                                      originX + (column + 1) * resolutionX
+                                  )
                                 : originX + column * resolutionX - cellWidth / 2,
                             y: isPixelArea
                                 ? Math.min(originY + row * resolutionY, originY + (row + 1) * resolutionY)

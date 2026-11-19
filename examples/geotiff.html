@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>GridViz GeoTIFF demo</title>
+        <style>
+            body {
+                font-family: sans-serif;
+                margin: 0;
+                color: #222;
+            }
+
+            header {
+                padding: 1rem 1.5rem;
+            }
+
+            h1 {
+                margin: 0 0 0.4rem;
+                font-size: 1.35rem;
+            }
+
+            p {
+                margin: 0;
+            }
+
+            #controls {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                margin-top: 0.75rem;
+            }
+
+            #map {
+                width: 100%;
+                height: calc(100vh - 120px);
+                min-height: 360px;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>GeoTIFF raster in GridViz</h1>
+            <p>
+                Sample raster: 100 m pixels in ETRS89-LAEA Europe (EPSG:3035). Hover a cell to inspect its
+                band values; drag and zoom to navigate.
+            </p>
+            <div id="controls">
+                <label for="band">Color by band</label>
+                <select id="band">
+                    <option value="band1">Band 1</option>
+                    <option value="band2">Band 2</option>
+                </select>
+                <span id="range"></span>
+            </div>
+        </header>
+        <div id="map"></div>
+
+        <script src="../node_modules/gridviz/dist/gridviz.min.js"></script>
+        <script src="../dist/gridviz-tiff.min.js"></script>
+        <script>
+            const map = new gridviz.Map(document.getElementById('map'), {
+                x: 4019050,
+                y: 2611250,
+                z: 15,
+                backgroundColor: '#f3f5f7',
+            })
+                .setZoomExtent([2, 1000])
+                .addZoomButtons()
+
+            const dataset = new gviz_tiff.GeoTIFF(map, './test.tif', 100)
+            const bandRanges = {
+                band1: [5, 1313],
+                band2: [109, 1720],
+            }
+
+            function updateLayer() {
+                const band = document.getElementById('band').value
+                const [min, max] = bandRanges[band]
+                document.getElementById('range').textContent = `Values: ${min}–${max}`
+
+                const style = new gridviz.ShapeColorSizeStyle({
+                    color: (cell) => {
+                        if (cell[band] === undefined) return 'none'
+                        const t = Math.max(0, Math.min(1, (cell[band] - min) / (max - min)))
+                        const red = Math.round(30 + 210 * t)
+                        const green = Math.round(75 + 145 * t)
+                        const blue = Math.round(145 - 105 * t)
+                        return `rgb(${red}, ${green}, ${blue})`
+                    },
+                })
+
+                map.layers = [
+                    new gridviz.GridLayer(dataset, [style], {
+                        cellInfoHTML: (cell) => `Band 1: ${cell.band1}<br>Band 2: ${cell.band2}`,
+                    }),
+                ]
+                map.redraw()
+            }
+
+            document.getElementById('band').addEventListener('change', updateLayer)
+            updateLayer()
+        </script>
+    </body>
+</html>

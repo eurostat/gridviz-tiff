@@ -73,7 +73,7 @@ test('loads all bands when the bands option is omitted', async () => {
     const dataset = new GeoTIFF({ redraw: jest.fn() }, '/data.tif', 1)
     await waitForLoad(dataset)
 
-    expect(fromUrl).toHaveBeenCalledWith('/data.tif')
+    expect(fromUrl).toHaveBeenCalledWith('/data.tif', { allowFullFile: true })
     expect(dataset.cells[0]).toHaveProperty('temperature', 1)
     expect(dataset.cells[0]).toHaveProperty('band2', 5)
 })

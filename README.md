@@ -27,3 +27,16 @@ otherwise names such as `band1` and `band2` are used. Pixels with NoData in ever
 loaded band are omitted. For a pixel with NoData in only some bands, those band
 properties are set to `undefined`. The inherited `preprocess` option can filter
 or transform the resulting cells.
+
+## Demo
+
+The demo in [`examples/geotiff.html`](./examples/geotiff.html) displays
+[`examples/test.tif`](./examples/test.tif) and lets you color the raster by
+either band. Build the browser bundle and serve the repository root over HTTP:
+
+```sh
+npm run bp
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000/examples/geotiff.html`.
