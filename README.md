@@ -40,3 +40,16 @@ python3 -m http.server 8000
 ```
 
 Then open `http://localhost:8000/examples/geotiff.html`.
+
+## Cloud-optimized GeoTIFF
+
+`COGeo` has the same bands and preprocessing API as `GeoTIFF`, but it requests
+only the part of the image intersecting the current map view:
+
+```js
+import { COGeo } from 'gridviz-tiff'
+
+const dataset = new COGeo(map, '/data/cloud-optimized.tif', 100, {
+    bands: [0, 2],
+})
+```
