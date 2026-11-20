@@ -5,8 +5,16 @@ module.exports = {
     mode: 'development',
     output: {
         filename: 'gridviz-tiff.js',
-        library: 'gviz_tiff',
+        library: ['gridviz', 'tiff'],
         libraryTarget: 'umd',
+    },
+    externals: {
+        gridviz: {
+            root: 'gridviz',
+            commonjs: 'gridviz',
+            commonjs2: 'gridviz',
+            amd: 'gridviz',
+        },
     },
     plugins: [new LiveReloadPlugin()],
     watch: true,

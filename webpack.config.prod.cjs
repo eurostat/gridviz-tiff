@@ -2,8 +2,16 @@ module.exports = {
     mode: 'production',
     output: {
         filename: 'gridviz-tiff.min.js',
-        library: 'gviz_tiff',
+        library: ['gridviz', 'tiff'],
         libraryTarget: 'umd',
+    },
+    externals: {
+        gridviz: {
+            root: 'gridviz',
+            commonjs: 'gridviz',
+            commonjs2: 'gridviz',
+            amd: 'gridviz',
+        },
     },
     module: {
         rules: [

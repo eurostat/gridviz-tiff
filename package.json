@@ -1,6 +1,6 @@
 {
     "name": "gridviz-tiff",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "TIFF format support for GridViz",
     "keywords": [],
     "homepage": "https://github.com/eurostat/gridviz-tiff",
@@ -24,7 +24,7 @@
     "scripts": {
         "start": "export NODE_OPTIONS=--openssl-legacy-provider && webpack --config webpack.config.dev.cjs",
         "start-dev": "webpack --config webpack.config.dev.cjs",
-        "server": "webpack serve -c webpack.config.dev.js --static ./",
+        "server": "webpack serve -c webpack.config.dev.cjs --static ./",
         "doc": "./node_modules/.bin/jsdoc src/ src/dataset src/legend src/style -d docs/jsdoc",
         "bp": "webpack --config webpack.config.prod.cjs",
         "test": "jest"

@@ -68,7 +68,7 @@
                 .setZoomExtent([2, 1000])
                 .addZoomButtons()
 
-            const dataset = new gviz_tiff.GeoTIFF(map, './test.tif', 100)
+            const dataset = new gridviz.tiff.GeoTIFF(map, './test.tif', 100)
             const bandRanges = {
                 band1: [5, 1313],
                 band2: [109, 1720],
