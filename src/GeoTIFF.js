@@ -27,7 +27,7 @@ export class GeoTIFF extends Dataset {
         this.cells = []
 
         /**
-         * Zero-based sample indexes to load; undefined means all samples.
+         * Zero-based band indexes to load; undefined means all bands.
          * @type {number[]|undefined}
          * @private
          */
@@ -52,23 +52,27 @@ export class GeoTIFF extends Dataset {
         this.infoLoadingStatus = 'loading'
         ;(async () => {
             try {
-                //similar to what class ParquetGrid from NPM gridviz-parquet plugin does with geotiff.js library
                 const tiff = await fromUrl(this.url, { allowFullFile: true })
                 const image = await tiff.getImage()
-                const sampleCount = image.getSamplesPerPixel()
+
+                // handle band indexes
+
+                const bandCount = image.getSamplesPerPixel()
                 const bands =
                     this.bands === undefined
-                        ? Array.from({ length: sampleCount }, (_, index) => index)
+                        ? Array.from({ length: bandCount }, (_, index) => index)
                         : this.bands
 
                 if (!Array.isArray(bands) || bands.length === 0)
                     throw new Error(
-                        'The bands option must be a non-empty array of zero-based sample indexes.'
+                        'The bands option must be a non-empty array of zero-based band indexes.'
                     )
-                if (bands.some((band) => !Number.isInteger(band) || band < 0 || band >= sampleCount))
-                    throw new RangeError(`Band indexes must be integers between 0 and ${sampleCount - 1}.`)
+                if (bands.some((band) => !Number.isInteger(band) || band < 0 || band >= bandCount))
+                    throw new RangeError(`Band indexes must be integers between 0 and ${bandCount - 1}.`)
                 if (new Set(bands).size !== bands.length)
                     throw new Error('The bands option must not contain duplicate indexes.')
+
+                // handle band names
 
                 const metadata = await Promise.all(bands.map((band) => image.getGDALMetadata(band)))
                 const bandNames = metadata.map((bandMetadata, index) => {
@@ -84,6 +88,8 @@ export class GeoTIFF extends Dataset {
                         'GeoTIFF band names cannot be "x" or "y", which are reserved for cell coordinates.'
                     )
 
+                // handle resolutions
+
                 const [resolutionX, resolutionY] = image.getResolution()
                 const cellWidth = Math.abs(resolutionX)
                 const cellHeight = Math.abs(resolutionY)
@@ -97,6 +103,8 @@ export class GeoTIFF extends Dataset {
                 if (Math.abs(cellWidth - cellHeight) > Math.max(cellWidth, cellHeight) * 1e-9)
                     throw new Error('GridViz requires square GeoTIFF pixels.')
 
+                // check non rotated images
+
                 const transformation = image.getFileDirectory().getValue('ModelTransformation')
                 if (
                     transformation &&
@@ -105,18 +113,24 @@ export class GeoTIFF extends Dataset {
                 )
                     throw new Error('Rotated GeoTIFF images are not supported.')
 
+
+                // handle raster size
+
                 const width = image.getWidth()
                 const height = image.getHeight()
                 const pixelCount = width * height
+
                 const raster = await image.readRasters({ samples: bands })
                 if (raster.length !== bands.length || raster.some((band) => band.length !== pixelCount))
                     throw new Error('GeoTIFF raster data does not match the image dimensions.')
 
+                // read raster data and convert to GridViz cells
+
                 const [originX, originY] = image.getOrigin()
                 const isPixelArea = image.getGeoKeys()?.GTRasterTypeGeoKey !== 2
                 const noDataValue = image.getGDALNoData()
-                const cells = []
 
+                const cells = []
                 for (let row = 0; row < height; row++) {
                     for (let column = 0; column < width; column++) {
                         const pixel = row * width + column
