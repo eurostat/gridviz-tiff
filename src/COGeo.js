@@ -80,13 +80,13 @@ export class COGeo extends Dataset {
                         this.abortController.signal
                     )
                     this.image = await this.tiff.getImage()
-                    const sampleCount = this.image.getSamplesPerPixel()
+                    const bandCount = this.image.getSamplesPerPixel()
                     const bands =
                         this.bands === undefined
-                            ? Array.from({ length: sampleCount }, (_, index) => index)
+                            ? Array.from({ length: bandCount }, (_, index) => index)
                             : this.bands
 
-                    validateBands(bands, sampleCount)
+                    validateBands(bands, bandCount)
                     const metadata = await Promise.all(bands.map((band) => this.image.getGDALMetadata(band)))
                     const bandNames = metadata.map((bandMetadata, index) => {
                         const description = bandMetadata && bandMetadata.DESCRIPTION
@@ -276,6 +276,8 @@ export class COGeo extends Dataset {
     }
 
 }
+
+
 
 function validateBands(bands, sampleCount) {
     if (!Array.isArray(bands) || bands.length === 0)
