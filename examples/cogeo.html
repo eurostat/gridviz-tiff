@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>GridViz COGeo demo</title>
+        <style>
+            body {
+                font-family: sans-serif;
+                margin: 0;
+                color: #222;
+            }
+
+            header {
+                padding: 1rem 1.5rem;
+            }
+
+            h1 {
+                margin: 0 0 0.4rem;
+                font-size: 1.35rem;
+            }
+
+            p {
+                margin: 0.25rem 0;
+            }
+
+            #controls {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                margin-top: 0.75rem;
+                flex-wrap: wrap;
+            }
+
+            #status {
+                color: #666;
+            }
+
+            #map {
+                width: 100%;
+                height: calc(100vh - 150px);
+                min-height: 360px;
+            }
+
+            a {
+                color: #126e82;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>Cloud-Optimized GeoTIFF in GridViz</h1>
+            <p>
+                European 100 m grid, EPSG:3035. Drag and zoom to load the intersecting raster window.
+            </p>
+            <div id="controls">
+                <label for="band">Color by band</label>
+                <select id="band">
+                    <option value="n1">n1</option>
+                    <option value="n5">n5</option>
+                </select>
+                <span id="status">Preparing metadata...</span>
+            </div>
+        </header>
+        <div id="map"></div>
+
+        <script src="https://cdn.jsdelivr.net/npm/gridviz@3.5.0"></script>
+        <script src="../dist/gridviz-tiff.js"></script>
+        <script>
+            const cogUrl =
+                'https://ec.europa.eu/eurostat/cache/GISCO/tiled-grids/test/euro_access_evrp_2025_CAR_M_100m_v2026_09.cog.tif'
+
+            const map = new gridviz.Map(document.getElementById('map'), {
+                x: 4019050,
+                y: 2611250,
+                z: 1,
+                backgroundColor: '#eef2f3',
+            })
+                .setZoomExtent([2, 1000])
+                .addZoomButtons()
+
+            const dataset = new gridviz.tiff.COGeo(map, cogUrl, 100)
+            let selectedBand = 'n1'
+
+            function updateLayer() {
+                selectedBand = document.getElementById('band').value
+
+                const style = new gridviz.ShapeColorSizeStyle({
+                    color: (cell) => {
+                        const value = cell[selectedBand]
+                        if (value === undefined) return 'none'
+
+                        const normalized = value <= 0
+                            ? 0
+                            : Math.min(1, Math.log1p(value) / Math.log1p(1000))
+                        const red = Math.round(44 + 190 * normalized)
+                        const green = Math.round(123 - 70 * normalized)
+                        const blue = Math.round(182 - 110 * normalized)
+                        return `rgb(${red}, ${green}, ${blue})`
+                        //return "red"
+                    },
+                    //size: (cell) => 5000
+                })
+
+                map.layers = [
+                    new gridviz.GridLayer(dataset, [style], {
+                        cellInfoHTML: (cell) =>
+                            `n1: ${cell.n1 === undefined ? 'NoData' : cell.n1}<br>` +
+                            `n5: ${cell.n5 === undefined ? 'NoData' : cell.n5}`,
+                    }),
+                ]
+                map.redraw()
+            }
+
+            document.getElementById('band').addEventListener('change', updateLayer)
+
+            const statusTimer = window.setInterval(() => {
+                let status
+                if (dataset.infoLoadingStatus === 'loading') {
+                    status = 'Loading TIFF metadata...'
+                } else if (dataset.infoLoadingStatus === 'failed') {
+                    status = 'Could not load TIFF metadata'
+                } else if (dataset.dataLoadingStatus === 'loading') {
+                    status = 'Loading visible raster window...'
+                } else if (dataset.dataLoadingStatus === 'failed') {
+                    status = 'Could not load the visible raster window'
+                } else if (dataset.infoLoadingStatus === 'loaded') {
+                    status =
+                        dataset.dataLoadingStatus === 'loaded'
+                            ? `${dataset.cells.length.toLocaleString()} visible cells`
+                            : 'Waiting for the map view'
+                } else {
+                    status = 'Preparing metadata...'
+                }
+                document.getElementById('status').textContent = status
+            }, 250)
+
+            window.addEventListener('beforeunload', () => window.clearInterval(statusTimer))
+            updateLayer()
+        </script>
+    </body>
+</html>
