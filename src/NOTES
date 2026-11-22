@@ -1,2 +1,10 @@
 https://ec.europa.eu/eurostat/cache/GISCO/tiled-grids/test/euro_access_evrp_2025_CAR_M_100m_v2026_09.cog.tif
 
+Test HTTP range request is allowed:
+
+
+curl -sI "https://ec.europa.eu/eurostat/cache/GISCO/tiled-grids/test/euro_access_evrp_2025_CAR_M_100m_v2026_09.cog.tif"
+
+Accept-Ranges: bytes → the server advertises range support
+Accept-Ranges: none (or the header missing) → not advertised (though some servers still support it, so do the real test below)
+Content-Length → total file size

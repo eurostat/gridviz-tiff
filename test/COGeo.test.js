@@ -14,6 +14,9 @@ jest.mock('gridviz', () => ({
     },
 }))
 jest.mock('geotiff', () => ({ fromUrl: jest.fn() }))
+jest.mock('../src/COGeoTileReader.js', () => ({
+    readTile: (url, remoteOptions, image, window, samples) => image.readRasters({ window, samples }),
+}))
 
 import { fromUrl } from 'geotiff'
 import { COGeo } from '../src/COGeo.js'
@@ -33,6 +36,8 @@ function createImage() {
         }),
         getWidth: () => 20,
         getHeight: () => 20,
+        getTileWidth: () => 2,
+        getTileHeight: () => 2,
         getOrigin: () => [100, 300],
         getBoundingBox: () => [100, 100, 300, 300],
         getGeoKeys: () => ({ GTRasterTypeGeoKey: 1 }),
@@ -40,16 +45,14 @@ function createImage() {
         fileDirectory: {
             getValue: () => undefined,
         },
-        readRasters: async ({ window, samples }) => {
+        readRasters: jest.fn(async ({ window, samples }) => {
             const width = window[2] - window[0]
             const height = window[3] - window[1]
             const pixelCount = width * height
             return samples.map((sample) =>
-                sample === 0
-                    ? new Float32Array(pixelCount).fill(1)
-                    : new Float32Array(pixelCount).fill(5)
+                sample === 0 ? new Float32Array(pixelCount).fill(1) : new Float32Array(pixelCount).fill(5)
             )
-        },
+        }),
     }
 }
 
@@ -64,16 +67,17 @@ beforeEach(() => {
 
 test('loads metadata and only the raster window within the view', async () => {
     const map = { redraw: jest.fn() }
+    const image = createImage()
+    fromUrl.mockResolvedValue({
+        getImage: async () => image,
+        getImageCount: async () => 1,
+    })
     const dataset = new COGeo(map, '/data.tif', 1, { bands: [1, 0] })
     await waitForStatus(dataset, 'loaded')
     await dataset.getData({ xMin: 120, xMax: 140, yMin: 220, yMax: 240 })
     await waitForStatus(dataset, 'loaded', 'dataLoadingStatus')
 
-    expect(fromUrl).toHaveBeenCalledWith(
-        '/data.tif',
-        { allowFullFile: false },
-        expect.any(AbortSignal)
-    )
+    expect(fromUrl).toHaveBeenCalledWith('/data.tif', { allowFullFile: false })
     expect(dataset.resolution).toBe(10)
     expect(dataset.infoLoadingStatus).toBe('loaded')
     expect(dataset.cells).toHaveLength(2 * 2)
@@ -85,4 +89,42 @@ test('loads metadata and only the raster window within the view', async () => {
     })
     dataset.updateViewCache({ xMin: 500, xMax: 510, yMin: 500, yMax: 510 })
     expect(dataset.getViewCache()).toHaveLength(0)
+
+    expect(image.readRasters).toHaveBeenCalledTimes(1)
+    expect(image.readRasters).toHaveBeenCalledWith({
+        window: [2, 6, 4, 8],
+        samples: [1, 0],
+    })
+    expect(dataset.cells.every((cell) => Number.isInteger(cell.x) && Number.isInteger(cell.y))).toBe(true)
+
+    await dataset.getData({ xMin: 120, xMax: 140, yMin: 220, yMax: 240 })
+    await waitForStatus(dataset, 'loaded', 'dataLoadingStatus')
+    expect(image.readRasters).toHaveBeenCalledTimes(1)
+})
+
+test('loads and caches only tiles intersecting the requested view', async () => {
+    const image = createImage()
+    fromUrl.mockResolvedValue({
+        getImage: async () => image,
+        getImageCount: async () => 1,
+    })
+
+    const dataset = new COGeo({ redraw: jest.fn() }, '/data.tif', 100)
+    await waitForStatus(dataset, 'loaded')
+    await dataset.getData({ xMin: 140, xMax: 160, yMin: 220, yMax: 240 })
+    await waitForStatus(dataset, 'loaded', 'dataLoadingStatus')
+
+    expect(image.readRasters).toHaveBeenCalledTimes(1)
+    expect(image.readRasters).toHaveBeenCalledWith({
+        window: [4, 6, 6, 8],
+        samples: [0, 1],
+    })
+
+    await dataset.getData({ xMin: 140, xMax: 160, yMin: 220, yMax: 240 })
+    await waitForStatus(dataset, 'loaded', 'dataLoadingStatus')
+    expect(image.readRasters).toHaveBeenCalledTimes(1)
+
+    await dataset.getData({ xMin: 160, xMax: 180, yMin: 220, yMax: 240 })
+    await waitForStatus(dataset, 'loaded', 'dataLoadingStatus')
+    expect(image.readRasters).toHaveBeenCalledTimes(2)
 })

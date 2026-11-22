@@ -41,6 +41,13 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000/examples/geotiff.html`.
 
+## COGeo demo
+
+The demo in [`examples/cogeo.html`](./examples/cogeo.html) loads the public
+Eurostat 100 m COGeo raster in EPSG:3035 and requests only the raster window
+intersecting the current map view. It exposes the `n1` and `n5` bands and allows
+both values to be inspected on hover.
+
 ## Cloud-optimized GeoTIFF
 
 `COGeo` has the same bands and preprocessing API as `GeoTIFF`, but it requests
@@ -53,3 +60,8 @@ const dataset = new COGeo(map, '/data/cloud-optimized.tif', 100, {
     bands: [0, 2],
 })
 ```
+
+`COGeo` reads the intersecting native TIFF tiles, caches recently used tiles,
+and reads them in web workers when available. It falls back to main-thread
+reads when workers are unavailable. Cell coordinates remain aligned to the
+base image grid.
