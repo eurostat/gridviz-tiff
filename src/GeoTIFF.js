@@ -14,11 +14,10 @@ export class GeoTIFF extends Dataset {
     /**
      * @param {object} map
      * @param {string} url
-     * @param {number} resolution Initial resolution; the GeoTIFF pixel size is used after loading.
      * @param {{preprocess?:function(object):boolean, bands?:number[]}} opts
      */
-    constructor(map, url, resolution, opts = {}) {
-        super(map, url, resolution, opts)
+    constructor(map, url, opts = {}) {
+        super(map, url, -1, opts)
 
         /**
          * @private

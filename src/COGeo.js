@@ -15,11 +15,10 @@ export class COGeo extends Dataset {
     /**
      * @param {object} map
      * @param {string} url
-     * @param {number} resolution Initial resolution; the COG pixel size is used after loading.
      * @param {{preprocess?:function(object):boolean, bands?:number[], headers?:object, credentials?:RequestCredentials, maxRanges?:number}} opts
      */
-    constructor(map, url, resolution, opts = {}) {
-        super(map, url, resolution, opts)
+    constructor(map, url, pts = {}) {
+        super(map, url, -1, opts)
         this.remoteOptions = opts.remoteOptions || opts
 
         /** @type {Array.<object>} */
