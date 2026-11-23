@@ -65,6 +65,7 @@ export function readTile(url, remoteOptions, image, window, samples) {
         nextWorker = (nextWorker + 1) % pool.length
         requests.set(id, { ...request, resolve, reject })
         try {
+            console.log(url, remoteOptions, window, samples)
             worker.postMessage({ id, url, remoteOptions, window, samples })
         } catch (error) {
             disableWorkers()

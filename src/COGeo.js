@@ -28,6 +28,7 @@ export class COGeo extends Dataset {
      */
     constructor(map, url, resolution, opts = {}) {
         super(map, url, resolution, opts)
+        // Keep transport settings separate from GridViz options such as preprocessing.
         this.remoteOptions = opts.remoteOptions || opts
 
         /** @type {Array.<COGeoCell>} */
@@ -59,6 +60,7 @@ export class COGeo extends Dataset {
 
         /** @type {{xMin:number,xMax:number,yMin:number,yMax:number}|undefined} */
         this.pendingView = undefined
+        // A new view invalidates work started by an older, superseded view.
         this.viewGeneration = 0
 
         this.getData()
@@ -66,12 +68,15 @@ export class COGeo extends Dataset {
 
     /** @returns {this} */
     getData(extGeo = undefined) {
+        // Remember the requested area if metadata loading is still in progress.
         if (extGeo) this.pendingView = extGeo
 
+        // Metadata is loaded once; subsequent calls only request a view update.
         if (this.infoLoadingStatus === 'notLoaded') {
             this.infoLoadingStatus = 'loading'
             ;(async () => {
                 try {
+                    // GeoTIFF range requests need to avoid downloading the whole file.
                     const remoteOptions = {
                         allowFullFile: false,
                         ...(this.remoteOptions.headers ? { headers: this.remoteOptions.headers } : {}),
@@ -88,12 +93,14 @@ export class COGeo extends Dataset {
                     )
                     this.image = await this.tiff.getImage()
                     const bandCount = this.image.getSamplesPerPixel()
+                    // Select all image bands unless the caller provides an explicit subset.
                     const bands =
                         this.bands === undefined
                             ? Array.from({ length: bandCount }, (_, index) => index)
                             : this.bands
 
                     validateBands(bands, bandCount)
+                    // GDAL metadata supplies descriptive names and per-band no-data values.
                     const metadata = await Promise.all(bands.map((band) => this.image.getGDALMetadata(band)))
                     const bandNames = metadata.map((bandMetadata, index) => {
                         const description = bandMetadata && bandMetadata.DESCRIPTION
@@ -114,11 +121,15 @@ export class COGeo extends Dataset {
                     }
                     this.bands = bands
 
+                    //console.log(this.rasterInfo)
+
+                    // GridViz uses one resolution value, so validate that pixels are square.
                     const cellWidth = Math.abs(resolutionX)
                     //console.log(`COGeo pixel size: ${cellWidth} x ${Math.abs(resolutionY)}`)
                     this.resolution = cellWidth
                     this.infoLoadingStatus = 'loaded'
 
+                    // Load an area that arrived while metadata was loading.
                     if (this.pendingView) this.loadView(this.pendingView)
                     if (this.map) this.map.redraw()
                 } catch (error) {
@@ -143,7 +154,9 @@ export class COGeo extends Dataset {
     async loadView(extGeo) {
         if (!this.image || !this.rasterInfo || !this.bands) return
 
+        // Ignore results from this load if a newer view request has started.
         const generation = ++this.viewGeneration
+        // Restrict the requested rectangle to the raster's geographic bounds.
         const bbox = getClippedBoundingBox(this.image, extGeo)
         if (!bbox) {
             this.cells = []
@@ -157,7 +170,9 @@ export class COGeo extends Dataset {
         try {
             const [originX, originY] = this.image.getOrigin()
             const [resolutionX, resolutionY] = this.image.getResolution()
+            // Pixel-area rasters use the grid corner as the cell position; point rasters use the pixel center.
             const isPixelArea = this.image.getGeoKeys()?.GTRasterTypeGeoKey !== 2
+            // Convert the geographic bounding box into a half-open pixel window.
             const window = getPixelWindow(
                 originX,
                 originY,
@@ -177,6 +192,10 @@ export class COGeo extends Dataset {
 
             const tileWidth = this.image.getTileWidth()
             const tileHeight = this.image.getTileHeight()
+
+            //console.log(this.image.getOrigin())
+            //console.log(`COGeo tile size: ${tileWidth} x ${tileHeight}`)
+
             if (
                 !Number.isInteger(tileWidth) ||
                 tileWidth <= 0 ||
@@ -184,6 +203,7 @@ export class COGeo extends Dataset {
                 tileHeight <= 0
             )
                 throw new Error('COGeo image tile dimensions must be positive integers.')
+            // Find every COG tile intersecting the requested pixel window.
             const minTileX = Math.floor(window[0] / tileWidth)
             const maxTileX = Math.ceil(window[2] / tileWidth)
             const minTileY = Math.floor(window[1] / tileHeight)
@@ -197,6 +217,7 @@ export class COGeo extends Dataset {
             }
 
             const cells = []
+            // Limit concurrent tile reads while preserving deterministic tile and cell processing.
             for (let index = 0; index < tileTasks.length; index += 4) {
                 const batch = tileTasks.slice(index, index + 4)
                 const rasters = await Promise.all(
@@ -209,6 +230,7 @@ export class COGeo extends Dataset {
                 for (let tileIndex = 0; tileIndex < batch.length; tileIndex++) {
                     const { tileX, tileY } = batch[tileIndex]
                     const raster = rasters[tileIndex]
+                    // Clip and convert only the visible portion of each raster tile.
                     const tileWindow = getTileWindow(
                         tileX,
                         tileY,
@@ -234,6 +256,7 @@ export class COGeo extends Dataset {
                 }
             }
 
+            // Publish the complete result only after all batches pass validation.
             this.cells = cells
             this.dataLoadingStatus = 'loaded'
             this.updateViewCache(extGeo)
@@ -259,6 +282,7 @@ export class COGeo extends Dataset {
         const bands = this.bands
         if (!bands) throw new Error('COGeo bands have not been initialized.')
         const key = `${tileX},${tileY}`
+        // Refresh recently used entries and serve cached tile data immediately.
         if (this.tileCache.has(key)) {
             const raster = this.tileCache.get(key)
             if (!raster) throw new Error('Cached COGeo tile is unavailable.')
@@ -266,6 +290,7 @@ export class COGeo extends Dataset {
             this.tileCache.set(key, raster)
             return Promise.resolve(raster)
         }
+        // Multiple view requests can share one in-flight read for the same tile.
         const pendingRequest = this.pendingTiles.get(key)
         if (pendingRequest) return pendingRequest
 
@@ -280,12 +305,14 @@ export class COGeo extends Dataset {
         const request = readTile(this.url, remoteOptions, this.image, window, bands)
         const tilePromise = request.then(
             (raster) => {
+                // Validate the returned shape before using it to build cells.
                 if (!Array.isArray(raster) || raster.length !== bands.length)
                     throw new Error('COGeo tile data does not match the selected bands.')
                 const pixelCount = (window[2] - window[0]) * (window[3] - window[1])
                 if (raster.some((band) => band.length !== pixelCount))
                     throw new Error('COGeo tile data does not match its dimensions.')
                 this.tileCache.set(key, raster)
+                // Keep the cache bounded by evicting the least recently used tile.
                 while (this.tileCache.size > 64) {
                     const oldest = this.tileCache.keys().next().value
                     if (oldest === undefined) break
@@ -294,6 +321,7 @@ export class COGeo extends Dataset {
                 return raster
             }
         ).finally(() => {
+            // Remove the completed promise only if it is still this tile's latest request.
             if (this.pendingTiles.get(key) === tilePromise) this.pendingTiles.delete(key)
         })
         this.pendingTiles.set(key, tilePromise)
@@ -303,6 +331,7 @@ export class COGeo extends Dataset {
     /** @param {{xMin:number,xMax:number,yMin:number,yMax:number}} extGeo */
     updateViewCache(extGeo) {
         this.cellsViewCache = []
+        // Keep only cells whose grid area overlaps the current view.
         for (const cell of this.cells) {
             if (+cell.x + this.resolution < extGeo.xMin) continue
             if (+cell.x - this.resolution > extGeo.xMax) continue
@@ -317,6 +346,7 @@ export class COGeo extends Dataset {
 
 
 function validateBands(bands, sampleCount) {
+    // Zero-based TIFF sample indexes must be valid and unambiguous.
     if (!Array.isArray(bands) || bands.length === 0)
         throw new Error('The bands option must be a non-empty array of zero-based sample indexes.')
     if (bands.some((band) => !Number.isInteger(band) || band < 0 || band >= sampleCount))
@@ -326,6 +356,7 @@ function validateBands(bands, sampleCount) {
 }
 
 function validateBandNames(bandNames) {
+    // Names become GridViz cell properties, so they must be unique and cannot shadow coordinates.
     if (new Set(bandNames).size !== bandNames.length)
         throw new Error('COGeo band names must be unique to create cell properties.')
     if (bandNames.some((name) => name === 'x' || name === 'y'))
@@ -333,6 +364,7 @@ function validateBandNames(bandNames) {
 }
 
 function validateRaster(resolutionX, resolutionY, image) {
+    // GridViz requires uniformly spaced, square pixels and rejects affine rotations.
     const cellWidth = Math.abs(resolutionX)
     const cellHeight = Math.abs(resolutionY)
     if (!Number.isFinite(cellWidth) || !Number.isFinite(cellHeight) || cellWidth <= 0 || cellHeight <= 0)
@@ -354,6 +386,7 @@ function validateRaster(resolutionX, resolutionY, image) {
  * @returns {[number,number,number,number]|undefined}
  */
 function getClippedBoundingBox(image, extGeo) {
+    // Intersect the requested view with the image footprint before converting to pixels.
     const bbox = image.getBoundingBox()
     if (!Array.isArray(bbox) || bbox.length !== 4) return undefined
     const xMin = Math.max(extGeo.xMin, bbox[0])
@@ -392,6 +425,7 @@ function getRemoteOptions(options) {
  * @returns {[number,number,number,number]}
  */
 function getTileWindow(tileX, tileY, tileWidth, tileHeight, imageWidth, imageHeight) {
+    // Clamp the final tile to the image edge, since edge tiles may be partial.
     const xMin = tileX * tileWidth
     const yMin = tileY * tileHeight
     return [
@@ -439,6 +473,7 @@ function cellsFromRaster({
     if (raster.some((band) => band.length !== tileWidth * tileHeight))
         throw new Error('COGeo tile data does not match its dimensions.')
 
+    // Limit raster iteration to the intersection of this tile and the requested pixel window.
     const xStart = Math.max(tileWindow[0], window[0])
     const yStart = Math.max(tileWindow[1], window[1])
     const xStop = Math.min(tileWindow[2], window[2])
@@ -448,10 +483,12 @@ function cellsFromRaster({
 
     for (let y = yStart; y < yStop; y++) {
         for (let x = xStart; x < xStop; x++) {
+            // Raster arrays are flat, so convert the pixel's row and column into a linear index.
             const pixel = (y - tileWindow[1]) * tileWidth + x - tileWindow[0]
             const left = originX + x * resolutionX
             const top = originY + y * resolutionY
             const cell = /** @type {COGeoCell} */ ({
+                // Pixel-area values use a corner; point values use the pixel center.
                 x: snapIntegerNoise(
                     isPixelArea ? Math.min(left, left + resolutionX) : left - Math.abs(resolutionX) / 2
                 ),
@@ -465,10 +502,12 @@ function cellsFromRaster({
                 const value = raster[bandIndex][pixel]
                 const bandNoData = getBandNoData(rasterInfo.noData, rasterInfo.metadata[bandIndex])
                 const isNoData = Number.isNaN(value) || isNoDataValue(value, bandNoData)
+                // Map each TIFF band to a named property on the GridViz cell.
                 cell[rasterInfo.names[bandIndex]] = isNoData ? undefined : value
                 if (!isNoData) hasData = true
             }
 
+            // Skip pixels with no valid band values, then apply the optional user filter.
             if (!hasData) continue
             if (preprocess && preprocess(cell) === false) continue
             cells.push(cell)
@@ -479,6 +518,7 @@ function cellsFromRaster({
 
 /** @param {number} value */
 function snapIntegerNoise(value) {
+    // Remove floating-point noise only when the result is effectively an integer.
     const nearestInteger = Math.round(value)
     return Math.abs(value - nearestInteger) < 1e-9 ? nearestInteger : value
 }
@@ -494,6 +534,7 @@ function snapIntegerNoise(value) {
  * @returns {[number,number,number,number]|undefined}
  */
 function getPixelWindow(originX, originY, resolutionX, resolutionY, width, height, bbox) {
+    // Transform both geographic axes, then normalize and clamp the resulting pixel bounds.
     const columns = [
         (bbox[0] - originX) / resolutionX,
         (bbox[2] - originX) / resolutionX,
@@ -511,6 +552,7 @@ function getPixelWindow(originX, originY, resolutionX, resolutionY, width, heigh
 }
 
 function getBandNoData(globalNoData, metadata) {
+    // Per-band GDAL metadata takes precedence over the TIFF-wide no-data value.
     const value = metadata ? metadata.NODATA_VALUE : undefined
     if (value !== undefined) return Number(value)
     return globalNoData
